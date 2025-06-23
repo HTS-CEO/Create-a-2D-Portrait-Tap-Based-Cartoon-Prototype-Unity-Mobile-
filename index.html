@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bounce Pop - Tap Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        body {
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            background: linear-gradient(to bottom, #87CEEB, #E0F7FA);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            position: fixed;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        #score-display {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 36px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        #combo-display {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: gold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        #timer-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        #start-screen, #end-screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+        
+        .screen-title {
+            color: white;
+            font-size: 48px;
+            margin-bottom: 30px;
+            text-align: center;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.8);
+        }
+        
+        .screen-button {
+            background: linear-gradient(to bottom, #FF9A9E, #FAD0C4);
+            border: none;
+            border-radius: 50px;
+            padding: 15px 30px;
+            font-size: 24px;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+            pointer-events: auto;
+        }
+        
+        .screen-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        #final-score {
+            color: gold;
+            font-size: 36px;
+            margin: 20px 0;
+        }
+        
+        @keyframes float-up {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100px);
+                opacity: 0;
+            }
+        }
+        
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+        
+        .bounce {
+            animation: bounce 0.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="ui-layer">
+            <div id="score-display">0</div>
+            <div id="combo-display">Combo x1</div>
+            <div id="timer-display">60</div>
+        </div>
+        
+        <div id="start-screen">
+            <h1 class="screen-title">Bounce Pop!</h1>
+            <p style="color: white; margin-bottom: 30px; text-align: center; font-size: 20px;">Tap the cute characters for points!<br>Avoid the bombs!</p>
+            <button class="screen-button" id="start-button">Start Game</button>
+        </div>
+        
+        <div id="end-screen" style="display: none;">
+            <h1 class="screen-title">Game Over!</h1>
+            <div id="final-score">Score: 0</div>
+            <button class="screen-button" id="restart-button">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        const gameState = {
+            score: 0,
+            combo: 0,
+            maxCombo: 0,
+            timeLeft: 60,
+            isPlaying: false,
+            characterCount: 5,
+            powerupCount: 3,
+            spawnRate: 1000,
+            lastSpawnTime: 0,
+            gameWidth: window.innerWidth,
+            gameHeight: window.innerHeight,
+            characters: [],
+            powerups: [],
+            explosions: [],
+            tapFeedbacks: [],
+            multiplierActive: false,
+            multiplierEndTime: 0,
+            freezeActive: false,
+            freezeEndTime: 0,
+            lastFrameTime: 0
+        };
+        
+        // DOM elements
+        const elements = {
+            gameContainer: document.getElementById('game-container'),
+            gameCanvas: document.getElementById('game-canvas'),
+            uiLayer: document.getElementById('ui-layer'),
+            scoreDisplay: document.getElementById('score-display'),
+            comboDisplay: document.getElementById('combo-display'),
+            timerDisplay: document.getElementById('timer-display'),
+            startScreen: document.getElementById('start-screen'),
+            endScreen: document.getElementById('end-screen'),
+            finalScore: document.getElementById('final-score'),
+            startButton: document.getElementById('start-button'),
+            restartButton: document.getElementById('restart-button')
+        };
+        
+        // Canvas setup
+        const canvas = elements.gameCanvas;
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            gameState.gameWidth = window.innerWidth;
+            gameState.gameHeight = window.innerHeight;
+            canvas.width = gameState.gameWidth;
+            canvas.height = gameState.gameHeight;
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Character designs (drawn with canvas)
+        const characterDesigns = [
+            // Simple animal faces
+            { color: '#FFD700', ears: '#FFA500', type: 'fox' },
+            { color: '#FFFFFF', ears: '#D3D3D3', type: 'rabbit' },
+            { color: '#FFB6C1', ears: '#FF69B4', type: 'cat' },
+            { color: '#ADD8E6', ears: '#0000FF', type: 'dog' },
+            { color: '#98FB98', ears: '#2E8B57', type: 'frog' }
+        ];
+        
+        // Powerup types and effects
+        const powerups = [
+            {
+                type: 'multiplier',
+                color: '#FFD700',
+                effect: '2x points for 5 seconds',
+                duration: 5000,
+                multiplier: 2
+            },
+            {
+                type: 'freeze',
+                color: '#ADD8E6',
+                effect: 'Freeze time for 3 seconds',
+                duration: 3000
+            },
+            {
+                type: 'combo',
+                color: '#FF69B4',
+                effect: 'Next 5 taps count as combo',
+                duration: null,
+                comboBoost: 5
+            }
+        ];
+        
+        // Obstacles
+        const obstacles = [
+            {
+                type: 'bomb',
+                color: '#333333',
+                penalty: -20
+            }
+        ];
+        
+        // Initialize game
+        function initGame() {
+            // Set up event listeners
+            elements.startButton.addEventListener('click', startGame);
+            elements.restartButton.addEventListener('click', startGame);
+            canvas.addEventListener('click', handleTap);
+            
+            // Preload character designs
+            preloadCharacterDesigns();
+        }
+        
+        // Preload character designs (in a real game, you'd preload images)
+        function preloadCharacterDesigns() {
+            // No actual images to preload in this canvas version
+        }
+        
+        // Start game
+        function startGame() {
+            // Reset game state
+            gameState.score = 0;
+            gameState.combo = 0;
+            gameState.maxCombo = 0;
+            gameState.timeLeft = 60;
+            gameState.isPlaying = true;
+            gameState.spawnRate = 1000;
+            gameState.lastSpawnTime = 0;
+            gameState.multiplierActive = false;
+            gameState.freezeActive = false;
+            gameState.characters = [];
+            gameState.powerups = [];
+            gameState.explosions = [];
+            gameState.tapFeedbacks = [];
+            
+            // Update UI
+            elements.scoreDisplay.textContent = '0';
+            elements.comboDisplay.style.opacity = '0';
+            elements.timerDisplay.textContent = gameState.timeLeft;
+            elements.startScreen.style.display = 'none';
+            elements.endScreen.style.display = 'none';
+            
+            // Start game loop
+            gameState.lastFrameTime = performance.now();
+            requestAnimationFrame(gameLoop);
+            
+            // Start timer
+            const timer = setInterval(() => {
+                if (!gameState.isPlaying || gameState.freezeActive) {
+                    if (!gameState.isPlaying) {
+                        clearInterval(timer);
+                    }
+                    return;
+                }
+                
+                gameState.timeLeft--;
+                elements.timerDisplay.textContent = gameState.timeLeft;
+                
+                if (gameState.timeLeft <= 0) {
+                    endGame();
+                    clearInterval(timer);
+                }
+            }, 1000);
+        }
+        
+        // Main game loop
+        function gameLoop(timestamp) {
+            if (!gameState.isPlaying) return;
+            
+            const deltaTime = timestamp - gameState.lastFrameTime;
+            gameState.lastFrameTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Spawn new characters and powerups
+            if (timestamp - gameState.lastSpawnTime > gameState.spawnRate) {
+                spawnCharacter();
+                
+                // Spawn powerup occasionally (20% chance)
+                if (Math.random() < 0.2) {
+                    spawnPowerup();
+                }
+                
+                // Spawn obstacle occasionally (15% chance)
+                if (Math.random() < 0.15) {
+                    spawnObstacle();
+                }
+                
+                gameState.lastSpawnTime = timestamp;
+                
+                // Gradually increase spawn rate
+                if (gameState.spawnRate > 300) {
+                    gameState.spawnRate -= 10;
+                }
+            }
+            
+            // Update all game objects
+            updateGameObjects(deltaTime);
+            
+            // Draw all game objects
+            drawGameObjects();
+            
+            // Check powerup timers
+            checkPowerupTimers(timestamp);
+            
+            // Continue the game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Spawn a new character
+        function spawnCharacter() {
+            const design = characterDesigns[Math.floor(Math.random() * characterDesigns.length)];
+            const xPos = Math.random() * (gameState.gameWidth - 80) + 40;
+            const speed = Math.random() * 3 + 2;
+            const scale = Math.random() * 0.5 + 0.5; // Random size between 0.5 and 1.0
+            
+            gameState.characters.push({
+                type: 'character',
+                x: xPos,
+                y: -60,
+                width: 60,
+                height: 60,
+                speed: speed,
+                value: 10,
+                design: design,
+                scale: scale,
+                animationFrame: 0,
+                active: true
+            });
+        }
+        
+        // Spawn a powerup
+        function spawnPowerup() {
+            const powerupType = powerups[Math.floor(Math.random() * powerups.length)];
+            const xPos = Math.random() * (gameState.gameWidth - 60) + 30;
+            const speed = Math.random() * 2 + 1;
+            
+            gameState.powerups.push({
+                type: 'powerup',
+                powerupType: powerupType.type,
+                x: xPos,
+                y: -50,
+                width: 50,
+                height: 50,
+                speed: speed,
+                design: powerupType,
+                active: true,
+                animationFrame: 0,
+                isBouncing: powerupType.type === 'combo'
+            });
+        }
+        
+        // Spawn an obstacle
+        function spawnObstacle() {
+            const obstacleType = obstacles[0]; // Only bomb for now
+            const xPos = Math.random() * (gameState.gameWidth - 60) + 30;
+            const speed = Math.random() * 3 + 2;
+            
+            gameState.powerups.push({
+                type: 'obstacle',
+                obstacleType: obstacleType.type,
+                x: xPos,
+                y: -50,
+                width: 50,
+                height: 50,
+                speed: speed,
+                value: obstacleType.penalty,
+                design: obstacleType,
+                active: true,
+                animationFrame: 0
+            });
+        }
+        
+        // Update all game objects
+        function updateGameObjects(deltaTime) {
+            // Update characters
+            gameState.characters = gameState.characters.filter(char => {
+                if (!char.active) return false;
+                
+                char.y += char.speed * (deltaTime / 16); // Normalize speed to 60fps
+                char.animationFrame = (char.animationFrame + 0.1) % 10;
+                
+                // Remove if off screen
+                if (char.y > gameState.gameHeight) {
+                    // Break combo if character escapes
+                    if (gameState.combo > 0) {
+                        gameState.combo = 0;
+                        elements.comboDisplay.style.opacity = '0';
+                    }
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            // Update powerups and obstacles
+            gameState.powerups = gameState.powerups.filter(powerup => {
+                if (!powerup.active) return false;
+                
+                powerup.y += powerup.speed * (deltaTime / 16); // Normalize speed to 60fps
+                powerup.animationFrame = (powerup.animationFrame + 0.1) % 10;
+                
+                // Remove if off screen
+                if (powerup.y > gameState.gameHeight) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            // Update explosions
+            gameState.explosions = gameState.explosions.filter(explosion => {
+                explosion.animationFrame += 0.2;
+                return explosion.animationFrame < 10;
+            });
+            
+            // Update tap feedbacks
+            gameState.tapFeedbacks = gameState.tapFeedbacks.filter(feedback => {
+                feedback.y -= 2 * (deltaTime / 16);
+                feedback.alpha -= 0.01 * (deltaTime / 16);
+                return feedback.alpha > 0;
+            });
+        }
+        
+        // Draw all game objects
+        function drawGameObjects() {
+            // Draw characters
+            gameState.characters.forEach(char => {
+                drawCharacter(char);
+            });
+            
+            // Draw powerups and obstacles
+            gameState.powerups.forEach(powerup => {
+                if (powerup.type === 'powerup') {
+                    drawPowerup(powerup);
+                } else {
+                    drawObstacle(powerup);
+                }
+            });
+            
+            // Draw explosions
+            gameState.explosions.forEach(explosion => {
+                drawExplosion(explosion);
+            });
+            
+            // Draw tap feedback
+            gameState.tapFeedbacks.forEach(feedback => {
+                drawTapFeedback(feedback);
+            });
+        }
+        
+        // Draw a character
+        function drawCharacter(char) {
+            ctx.save();
+            ctx.translate(char.x, char.y);
+            ctx.scale(char.scale, char.scale);
+            
+            // Face base
+            ctx.beginPath();
+            ctx.arc(0, 0, 25, 0, Math.PI * 2);
+            ctx.fillStyle = char.design.color;
+            ctx.fill();
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Ears (if animal has ears)
+            if (char.design.type !== 'frog') {
+                // Left ear
+                ctx.beginPath();
+                ctx.moveTo(-15, -20);
+                ctx.lineTo(-25, -35);
+                ctx.lineTo(-10, -25);
+                ctx.fillStyle = char.design.ears;
+                ctx.fill();
+                ctx.stroke();
+                
+                // Right ear
+                ctx.beginPath();
+                ctx.moveTo(15, -20);
+                ctx.lineTo(25, -35);
+                ctx.lineTo(10, -25);
+                ctx.fill();
+                ctx.stroke();
+            }
+            
+            // Eyes
+            ctx.beginPath();
+            ctx.arc(-10, -5, 5, 0, Math.PI * 2);
+            ctx.arc(10, -5, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fill();
+            ctx.stroke();
+            
+            // Pupils (animate blinking)
+            if (Math.floor(char.animationFrame) % 10 < 8) { // Eyes open 80% of time
+                ctx.beginPath();
+                ctx.arc(-10, -5, 2, 0, Math.PI * 2);
+                ctx.arc(10, -5, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+            } else { // Blinking
+                ctx.beginPath();
+                ctx.moveTo(-15, -5);
+                ctx.lineTo(-5, -5);
+                ctx.moveTo(5, -5);
+                ctx.lineTo(15, -5);
+                ctx.stroke();
+            }
+            
+            // Mouth (smile or neutral)
+            ctx.beginPath();
+            if (Math.floor(char.animationFrame) % 2 === 0) {
+                ctx.arc(0, 5, 10, 0.1 * Math.PI, 0.9 * Math.PI);
+            } else {
+                ctx.moveTo(-10, 5);
+                ctx.lineTo(10, 5);
+            }
+            ctx.stroke();
+            
+            // Special features based on type
+            switch (char.design.type) {
+                case 'fox':
+                    // Fox nose
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FF0000';
+                    ctx.fill();
+                    break;
+                case 'cat':
+                    // Whiskers
+                    ctx.beginPath();
+                    ctx.moveTo(-5, 0);
+                    ctx.lineTo(-20, -5);
+                    ctx.moveTo(-5, 5);
+                    ctx.lineTo(-20, 5);
+                    ctx.moveTo(5, 0);
+                    ctx.lineTo(20, -5);
+                    ctx.moveTo(5, 5);
+                    ctx.lineTo(20, 5);
+                    ctx.stroke();
+                    break;
+                case 'frog':
+                    // Frog mouth
+                    ctx.beginPath();
+                    ctx.arc(0, 15, 10, 0, Math.PI);
+                    ctx.stroke();
+                    break;
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw a powerup
+        function drawPowerup(powerup) {
+            ctx.save();
+            ctx.translate(powerup.x, powerup.y);
+            
+            // Draw different powerups based on type
+            switch (powerup.powerupType) {
+                case 'multiplier':
+                    // Star shape
+                    ctx.beginPath();
+                    ctx.moveTo(0, -25);
+                    ctx.lineTo(10, 10);
+                    ctx.lineTo(-25, -5);
+                    ctx.lineTo(25, -5);
+                    ctx.lineTo(-10, 10);
+                    ctx.closePath();
+                    ctx.fillStyle = powerup.design.color;
+                    ctx.fill();
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // "x2" text
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('x2', 0, 0);
+                    break;
+                    
+                case 'freeze':
+                    // Snowflake
+                    ctx.fillStyle = powerup.design.color;
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    
+                    for (let i = 0; i < 6; i++) {
+                        ctx.save();
+                        ctx.rotate(i * Math.PI / 3);
+                        
+                        // Main branch
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, -20);
+                        ctx.stroke();
+                        
+                        // Side branches
+                        ctx.beginPath();
+                        ctx.moveTo(0, -10);
+                        ctx.lineTo(-8, -15);
+                        ctx.moveTo(0, -10);
+                        ctx.lineTo(8, -15);
+                        ctx.stroke();
+                        
+                        ctx.restore();
+                    }
+                    
+                    // Center circle
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    break;
+                    
+                case 'combo':
+                    // Sparkle with animation
+                    const bounceOffset = powerup.isBouncing ? Math.sin(powerup.animationFrame) * 5 : 0;
+                    
+                    ctx.translate(0, bounceOffset);
+                    
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 20, 0, Math.PI * 2);
+                    ctx.fillStyle = powerup.design.color;
+                    ctx.fill();
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Draw sparkle lines
+                    for (let i = 0; i < 8; i++) {
+                        ctx.save();
+                        ctx.rotate(i * Math.PI / 4 + powerup.animationFrame * 0.2);
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(15, 0);
+                        ctx.lineTo(25, 0);
+                        ctx.stroke();
+                        
+                        ctx.restore();
+                    }
+                    
+                    // "C" text
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('C', 0, 0);
+                    break;
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw an obstacle
+        function drawObstacle(obstacle) {
+            ctx.save();
+            ctx.translate(obstacle.x, obstacle.y);
+            
+            // Bomb shape
+            ctx.beginPath();
+            ctx.arc(0, 0, 20, 0, Math.PI * 2);
+            ctx.fillStyle = obstacle.design.color;
+            ctx.fill();
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Fuse
+            ctx.beginPath();
+            ctx.moveTo(10, -15);
+            ctx.lineTo(20, -25);
+            ctx.lineTo(15, -30);
+            ctx.stroke();
+            
+            // Angry face
+            ctx.beginPath();
+            ctx.arc(-8, -5, 3, 0, Math.PI * 2); // Left eye
+            ctx.arc(8, -5, 3, 0, Math.PI * 2);  // Right eye
+            ctx.fillStyle = '#000000';
+            ctx.fill();
+            
+            // Angry eyebrows
+            ctx.beginPath();
+            ctx.moveTo(-12, -12);
+            ctx.lineTo(-4, -8);
+            ctx.moveTo(4, -8);
+            ctx.lineTo(12, -12);
+            ctx.stroke();
+            
+            // Mouth
+            ctx.beginPath();
+            ctx.arc(0, 5, 8, 0.1 * Math.PI, 0.9 * Math.PI, true);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+        
+        // Draw an explosion
+        function drawExplosion(explosion) {
+            ctx.save();
+            ctx.translate(explosion.x, explosion.y);
+            
+            const frame = Math.floor(explosion.animationFrame);
+            const radius = 20 + frame * 3;
+            const alpha = 1 - frame * 0.1;
+            
+            // Draw expanding circle
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 200, 0, ${alpha})`;
+            ctx.fill();
+            
+            // Draw particles
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const particleLength = radius + frame * 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(
+                    Math.cos(angle) * particleLength,
+                    Math.sin(angle) * particleLength
+                );
+                ctx.strokeStyle = `rgba(255, ${100 + frame * 10}, 0, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw tap feedback
+        function drawTapFeedback(feedback) {
+            ctx.save();
+            ctx.translate(feedback.x, feedback.y);
+            
+            ctx.fillStyle = feedback.color;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.font = `bold ${24 + feedback.size}px Comic Sans MS`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.globalAlpha = feedback.alpha;
+            
+            // Text with outline
+            ctx.strokeText(feedback.text, 0, 0);
+            ctx.fillText(feedback.text, 0, 0);
+            
+            ctx.restore();
+        }
+        
+        // Handle tap events
+        function handleTap(e) {
+            if (!gameState.isPlaying) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const tapX = e.clientX - rect.left;
+            const tapY = e.clientY - rect.top;
+            
+            // Check if tapped on a character
+            let tappedElement = null;
+            
+            // Check characters first (reverse order for proper z-index)
+            for (let i = gameState.characters.length - 1; i >= 0; i--) {
+                const char = gameState.characters[i];
+                if (char.active && isPointInCircle(tapX, tapY, char.x, char.y, char.width/2)) {
+                    tappedElement = char;
+                    break;
+                }
+            }
+            
+            // If no character, check powerups/obstacles
+            if (!tappedElement) {
+                for (let i = gameState.powerups.length - 1; i >= 0; i--) {
+                    const powerup = gameState.powerups[i];
+                    if (powerup.active && isPointInCircle(tapX, tapY, powerup.x, powerup.y, powerup.width/2)) {
+                        tappedElement = powerup;
+                        break;
+                    }
+                }
+            }
+            
+            if (tappedElement) {
+                // Handle based on element type
+                if (tappedElement.type === 'character') {
+                    handleCharacterTap(tappedElement, tapX, tapY);
+                } else if (tappedElement.type === 'powerup') {
+                    handlePowerupTap(tappedElement, tapX, tapY);
+                } else if (tappedElement.type === 'obstacle') {
+                    handleObstacleTap(tappedElement, tapX, tapY);
+                }
+            } else {
+                // Missed tap - break combo
+                if (gameState.combo > 0) {
+                    gameState.combo = 0;
+                    elements.comboDisplay.style.opacity = '0';
+                    createTapFeedback(tapX, tapY, 'Miss!', 'red');
+                }
+            }
+        }
+        
+        // Check if point is in circle
+        function isPointInCircle(px, py, cx, cy, radius) {
+            const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+            return dist <= radius;
+        }
+        
+        // Handle character tap
+        function handleCharacterTap(char, tapX, tapY) {
+            // Get value and calculate score
+            let scoreIncrease = char.value;
+            
+            // Apply multiplier if active
+            if (gameState.multiplierActive) {
+                scoreIncrease *= 2;
+            }
+            
+            // Apply combo bonus
+            if (gameState.combo > 0) {
+                scoreIncrease += Math.floor(gameState.combo * 0.5);
+            }
+            
+            // Update score
+            gameState.score += scoreIncrease;
+            elements.scoreDisplay.textContent = gameState.score;
+            
+            // Update combo
+            gameState.combo++;
+            if (gameState.combo > gameState.maxCombo) {
+                gameState.maxCombo = gameState.combo;
+            }
+            
+            // Show combo if > 1
+            if (gameState.combo > 1) {
+                elements.comboDisplay.textContent = `Combo x${gameState.combo}`;
+                elements.comboDisplay.style.opacity = '1';
+            }
+            
+            // Show tap feedback
+            createTapFeedback(tapX, tapY, `+${scoreIncrease}`, gameState.combo > 3 ? 'gold' : 'white');
+            
+            // Create explosion effect
+            createExplosion(char.x, char.y);
+            
+            // Remove character
+            char.active = false;
+        }
+        
+        // Handle powerup tap
+        function handlePowerupTap(powerup, tapX, tapY) {
+            const powerupType = powerup.powerupType;
+            let feedbackText = '';
+            let feedbackColor = 'cyan';
+            const now = performance.now();
+            
+            // Apply powerup effect
+            switch (powerupType) {
+                case 'multiplier':
+                    feedbackText = '2x Points!';
+                    gameState.multiplierActive = true;
+                    gameState.multiplierEndTime = now + powerup.design.duration;
+                    break;
+                case 'freeze':
+                    feedbackText = 'Time Freeze!';
+                    gameState.freezeActive = true;
+                    gameState.freezeEndTime = now + powerup.design.duration;
+                    break;
+                case 'combo':
+                    feedbackText = 'Combo Boost!';
+                    gameState.combo += powerup.design.comboBoost;
+                    feedbackColor = 'gold';
+                    break;
+            }
+            
+            // Show tap feedback
+            createTapFeedback(tapX, tapY, feedbackText, feedbackColor);
+            
+            // Create explosion effect
+            createExplosion(powerup.x, powerup.y);
+            
+            // Remove powerup
+            powerup.active = false;
+        }
+        
+        // Handle obstacle tap
+        function handleObstacleTap(obstacle, tapX, tapY) {
+            const penalty = obstacle.value;
+            gameState.score += penalty;
+            
+            // Ensure score doesn't go negative
+            if (gameState.score < 0) gameState.score = 0;
+            
+            elements.scoreDisplay.textContent = gameState.score;
+            
+            // Break combo
+            if (gameState.combo > 0) {
+                gameState.combo = 0;
+                elements.comboDisplay.style.opacity = '0';
+            }
+            
+            // Show tap feedback
+            createTapFeedback(tapX, tapY, `${penalty}`, 'red');
+            
+            // Create explosion effect
+            createExplosion(obstacle.x, obstacle.y, true);
+            
+            // Remove obstacle
+            obstacle.active = false;
+        }
+        
+        // Create tap feedback
+        function createTapFeedback(x, y, text, color) {
+            gameState.tapFeedbacks.push({
+                x: x,
+                y: y,
+                text: text,
+                color: color,
+                size: Math.random() * 10,
+                alpha: 1
+            });
+        }
+        
+        // Create explosion effect
+        function createExplosion(x, y, isBomb = false) {
+            gameState.explosions.push({
+                x: x,
+                y: y,
+                animationFrame: 0,
+                isBomb: isBomb
+            });
+            
+            // Play sound (in a real game)
+            // playSound(isBomb ? 'explosion' : 'pop');
+        }
+        
+        // Check powerup timers
+        function checkPowerupTimers(now) {
+            // Check multiplier timer
+            if (gameState.multiplierActive && now > gameState.multiplierEndTime) {
+                gameState.multiplierActive = false;
+                createTapFeedback(
+                    gameState.gameWidth / 2,
+                    gameState.gameHeight / 2,
+                    'Multiplier Ended!',
+                    'white'
+                );
+            }
+            
+            // Check freeze timer
+            if (gameState.freezeActive && now > gameState.freezeEndTime) {
+                gameState.freezeActive = false;
+                createTapFeedback(
+                    gameState.gameWidth / 2,
+                    gameState.gameHeight / 2,
+                    'Time Resumes!',
+                    'white'
+                );
+            }
+        }
+        
+        // End game
+        function endGame() {
+            gameState.isPlaying = false;
+            elements.finalScore.textContent = `Score: ${gameState.score} (Max Combo: ${gameState.maxCombo})`;
+            elements.endScreen.style.display = 'flex';
+        }
+        
+        // Initialize the game when loaded
+        window.onload = initGame;
+    </script>
+</body>
+</html>
